@@ -152,80 +152,137 @@ impl Drop for PollerHandle {
 ///
 /// Encapsulates per-source construction and logging. Called by both the
 /// continuous poller and the one-shot snapshot.
+fn join_or_log<T>(result: std::thread::Result<T>, name: &str) -> Option<T> {
+    match result {
+        Ok(v) => Some(v),
+        Err(payload) => {
+            let msg = payload
+                .downcast_ref::<&str>()
+                .copied()
+                .or_else(|| payload.downcast_ref::<String>().map(|s| s.as_str()))
+                .unwrap_or("unknown");
+            log::error!("{name} sensor discovery panicked: {msg}");
+            None
+        }
+    }
+}
+
 fn discover_all_sources(
     no_nvidia: bool,
     direct_io: bool,
     label_overrides: &HashMap<String, String>,
 ) -> Vec<Box<dyn SensorSource>> {
-    let mut sources: Vec<Box<dyn SensorSource>> = Vec::new();
+    use std::thread;
+    use std::time::Instant;
 
-    let hwmon_src = hwmon::HwmonSource::discover(label_overrides);
-    log::info!(
-        "hwmon: {} chips, {} sensors",
-        hwmon_src.chip_count(),
-        hwmon_src.sensor_count()
-    );
-    sources.push(Box::new(hwmon_src));
+    // Run slow discoveries in parallel. IPMI (SDR walk + initial poll) and
+    // GPU/NVML init are the biggest bottlenecks — 5-10s each on large systems.
+    // By running them concurrently we cut startup from sum to max.
+    let t = Instant::now();
+    let sources: Vec<Box<dyn SensorSource>> = thread::scope(|s| {
+        // Slow: IPMI SDR walk + initial poll (~5-10s on workstation BMCs)
+        let h_ipmi = s.spawn(|| -> Box<dyn SensorSource> {
+            let src = super::ipmi::IpmiSource::discover();
+            log::info!("IPMI: {}", if src.is_available() { "yes" } else { "no" });
+            Box::new(src)
+        });
 
-    sources.push(Box::new(cpu_freq::CpuFreqSource::discover()));
-    sources.push(Box::new(cpu_util::CpuUtilSource::discover()));
-    sources.push(Box::new(gpu_sensors::GpuSensorSource::discover(no_nvidia)));
-    sources.push(Box::new(rapl::RaplSource::discover()));
-    sources.push(Box::new(disk_activity::DiskActivitySource::discover()));
-    sources.push(Box::new(network_stats::NetworkStatsSource::discover()));
+        // Slow: NVML library load + init + device enumeration (~2-5s)
+        let h_gpu = s.spawn(move || -> Box<dyn SensorSource> {
+            Box::new(gpu_sensors::GpuSensorSource::discover(no_nvidia))
+        });
 
-    // Direct I/O sources (Super I/O, I2C) — only when --direct-io is set
-    if direct_io {
-        let chips = superio::chip_detect::detect_all();
-        let mut nct_count = 0;
-        let mut ite_count = 0;
-        for chip in chips {
-            let nct_s = superio::nct67xx::Nct67xxSource::new(chip.clone(), label_overrides);
-            if nct_s.is_supported() {
-                nct_count += 1;
-                sources.push(Box::new(nct_s));
-                continue;
-            }
-            let ite_s = superio::ite87xx::Ite87xxSource::new(chip);
-            if ite_s.is_supported() {
-                ite_count += 1;
-                sources.push(Box::new(ite_s));
-            }
-        }
-        if nct_count > 0 || ite_count > 0 {
+        // Slow: HSMP device open + protocol probe
+        let h_hsmp = s.spawn(|| -> Box<dyn SensorSource> {
+            let src = super::hsmp::HsmpSource::discover();
+            log::info!("HSMP: {}", if src.is_available() { "yes" } else { "no" });
+            Box::new(src)
+        });
+
+        // Moderate: hwmon sysfs enumeration
+        let h_hwmon = s.spawn(|| -> Box<dyn SensorSource> {
+            let src = hwmon::HwmonSource::discover(label_overrides);
             log::info!(
-                "Super I/O: {} nct chips, {} ite chips",
-                nct_count,
-                ite_count
+                "hwmon: {} chips, {} sensors",
+                src.chip_count(),
+                src.sensor_count()
             );
+            Box::new(src)
+        });
+
+        // Direct I/O sources (Super I/O, I2C) — only when --direct-io is set
+        let h_direct_io = if direct_io {
+            Some(s.spawn(|| -> Vec<Box<dyn SensorSource>> {
+                let mut dio_sources: Vec<Box<dyn SensorSource>> = Vec::new();
+
+                let chips = superio::chip_detect::detect_all();
+                let mut nct_count = 0;
+                let mut ite_count = 0;
+                for chip in chips {
+                    let nct_s = superio::nct67xx::Nct67xxSource::new(chip.clone(), label_overrides);
+                    if nct_s.is_supported() {
+                        nct_count += 1;
+                        dio_sources.push(Box::new(nct_s));
+                        continue;
+                    }
+                    let ite_s = superio::ite87xx::Ite87xxSource::new(chip);
+                    if ite_s.is_supported() {
+                        ite_count += 1;
+                        dio_sources.push(Box::new(ite_s));
+                    }
+                }
+                if nct_count > 0 || ite_count > 0 {
+                    log::info!(
+                        "Super I/O: {} nct chips, {} ite chips",
+                        nct_count,
+                        ite_count
+                    );
+                }
+
+                let buses = crate::sensors::i2c::bus_scan::enumerate_smbus_adapters();
+                dio_sources.push(Box::new(
+                    crate::sensors::i2c::spd5118::Spd5118Source::discover(&buses),
+                ));
+                dio_sources.push(Box::new(crate::sensors::i2c::pmbus::PmbusSource::discover(
+                    &buses,
+                )));
+                log::info!("I2C: enabled ({} buses)", buses.len());
+
+                dio_sources
+            }))
+        } else {
+            None
+        };
+
+        // Fast: these are trivial sysfs reads, run on the main thread while waiting
+        let mut result: Vec<Box<dyn SensorSource>> = vec![
+            Box::new(cpu_freq::CpuFreqSource::discover()),
+            Box::new(cpu_util::CpuUtilSource::discover()),
+            Box::new(rapl::RaplSource::discover()),
+            Box::new(disk_activity::DiskActivitySource::discover()),
+            Box::new(network_stats::NetworkStatsSource::discover()),
+        ];
+
+        // Collect parallel results — log and skip any that panicked
+        result.extend(join_or_log(h_hwmon.join(), "hwmon"));
+        result.extend(join_or_log(h_gpu.join(), "gpu"));
+        result.extend(join_or_log(h_hsmp.join(), "hsmp"));
+        result.extend(join_or_log(h_ipmi.join(), "ipmi"));
+
+        if let Some(h) = h_direct_io {
+            if let Some(dio) = join_or_log(h.join(), "direct-io") {
+                result.extend(dio);
+            }
         }
 
-        let buses = crate::sensors::i2c::bus_scan::enumerate_smbus_adapters();
-        sources.push(Box::new(
-            crate::sensors::i2c::spd5118::Spd5118Source::discover(&buses),
-        ));
-        sources.push(Box::new(crate::sensors::i2c::pmbus::PmbusSource::discover(
-            &buses,
-        )));
-        log::info!("I2C: enabled ({} buses)", buses.len());
-    }
+        result
+    });
 
-    // HSMP — always try (don't require --direct-io)
-    let hsmp_src = super::hsmp::HsmpSource::discover();
     log::info!(
-        "HSMP: {}",
-        if hsmp_src.is_available() { "yes" } else { "no" }
+        "Sensor discovery: {} sources in {}ms",
+        sources.len(),
+        t.elapsed().as_millis()
     );
-    sources.push(Box::new(hsmp_src));
-
-    // IPMI — native ioctl via ipmi-rs, fast enough for the main loop
-    let ipmi_src = super::ipmi::IpmiSource::discover();
-    log::info!(
-        "IPMI: {}",
-        if ipmi_src.is_available() { "yes" } else { "no" }
-    );
-    sources.push(Box::new(ipmi_src));
-
     sources
 }
 

@@ -170,25 +170,23 @@ fn run_sensor_snapshot(cli: &Cli, label_overrides: &std::collections::HashMap<St
     }
 }
 
-fn collect_all(cli: &Cli) -> SystemInfo {
-    use collectors::Collector;
+fn join_or_default<T: Default>(result: std::thread::Result<T>, name: &str) -> T {
+    match result {
+        Ok(v) => v,
+        Err(payload) => {
+            let msg = payload
+                .downcast_ref::<&str>()
+                .copied()
+                .or_else(|| payload.downcast_ref::<String>().map(|s| s.as_str()))
+                .unwrap_or("unknown");
+            log::error!("{name} collector panicked: {msg}");
+            T::default()
+        }
+    }
+}
 
-    let all: Vec<Box<dyn Collector>> = vec![
-        Box::new(collectors::cpu::CpuCollector),
-        Box::new(collectors::memory::MemoryCollector),
-        Box::new(collectors::motherboard::MotherboardCollector),
-        Box::new(collectors::gpu::GpuCollector {
-            no_nvidia: cli.no_nvidia,
-        }),
-        Box::new(collectors::storage::StorageCollector),
-        Box::new(collectors::network::NetworkCollector {
-            physical_only: true,
-        }),
-        Box::new(collectors::pci::PciCollector),
-        Box::new(collectors::audio::AudioCollector),
-        Box::new(collectors::usb::UsbCollector),
-        Box::new(collectors::battery::BatteryCollector),
-    ];
+fn collect_all(cli: &Cli) -> SystemInfo {
+    let no_nvidia = cli.no_nvidia;
 
     let hostname =
         platform::sysfs::read_string_optional(std::path::Path::new("/proc/sys/kernel/hostname"))
@@ -198,31 +196,63 @@ fn collect_all(cli: &Cli) -> SystemInfo {
         platform::sysfs::read_string_optional(std::path::Path::new("/proc/sys/kernel/osrelease"))
             .unwrap_or_else(|| "unknown".into());
 
-    let mut info = SystemInfo {
+    // Run all collectors in parallel — the slow ones (GPU/NVML, storage/SMART,
+    // PCI enumeration) no longer block each other.
+    let t = std::time::Instant::now();
+    let (cpus, memory, motherboard, gpus, storage, network, pci, audio, usb, batteries) =
+        std::thread::scope(|s| {
+            let h_cpu = s.spawn(|| {
+                collectors::cpu::collect().unwrap_or_else(|e| {
+                    log::warn!("CPU collection failed: {e}");
+                    Vec::new()
+                })
+            });
+            let h_mem = s.spawn(collectors::memory::collect);
+            let h_board = s.spawn(collectors::motherboard::collect);
+            let h_gpu = s.spawn(move || collectors::gpu::collect(no_nvidia));
+            let h_stor = s.spawn(collectors::storage::collect);
+            let h_net = s.spawn(|| collectors::network::collect(true));
+            let h_pci = s.spawn(collectors::pci::collect);
+            let h_audio = s.spawn(collectors::audio::collect);
+            let h_usb = s.spawn(collectors::usb::collect);
+            let h_batt = s.spawn(collectors::battery::collect);
+
+            (
+                join_or_default(h_cpu.join(), "cpu"),
+                join_or_default(h_mem.join(), "memory"),
+                join_or_default(h_board.join(), "motherboard"),
+                join_or_default(h_gpu.join(), "gpu"),
+                join_or_default(h_stor.join(), "storage"),
+                join_or_default(h_net.join(), "network"),
+                join_or_default(h_pci.join(), "pci"),
+                join_or_default(h_audio.join(), "audio"),
+                join_or_default(h_usb.join(), "usb"),
+                join_or_default(h_batt.join(), "battery"),
+            )
+        });
+    log::info!(
+        "Hardware collection completed in {}ms",
+        t.elapsed().as_millis()
+    );
+
+    SystemInfo {
         timestamp: Utc::now(),
         sinfo_version: env!("CARGO_PKG_VERSION").to_string(),
         hostname,
         kernel_version,
         os_name: read_os_name(),
-        cpus: Vec::new(),
-        memory: Default::default(),
-        motherboard: Default::default(),
-        gpus: Vec::new(),
-        storage: Vec::new(),
-        network: Vec::new(),
-        audio: Vec::new(),
-        usb_devices: Vec::new(),
-        pci_devices: Vec::new(),
-        batteries: Vec::new(),
+        cpus,
+        memory,
+        motherboard,
+        gpus,
+        storage,
+        network,
+        audio,
+        usb_devices: usb,
+        pci_devices: pci,
+        batteries,
         sensors: None,
-    };
-
-    for collector in &all {
-        log::debug!("Collecting: {}", collector.name());
-        collector.collect_into(&mut info);
     }
-
-    info
 }
 
 fn read_os_name() -> Option<String> {
