@@ -130,7 +130,7 @@ fn collect_aer(path: &Path) -> Option<AerCounters> {
 }
 
 /// Parse the TOTAL_ line from an AER counter file.
-fn parse_aer_total(path: &Path) -> Option<u64> {
+pub(crate) fn parse_aer_total(path: &Path) -> Option<u64> {
     let content = std::fs::read_to_string(path).ok()?;
     for line in content.lines() {
         if line.starts_with("TOTAL_") {

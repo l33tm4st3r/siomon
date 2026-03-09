@@ -261,6 +261,9 @@ fn discover_all_sources(
             Box::new(rapl::RaplSource::discover()),
             Box::new(disk_activity::DiskActivitySource::discover()),
             Box::new(network_stats::NetworkStatsSource::discover()),
+            Box::new(super::edac::EdacSource::discover()),
+            Box::new(super::aer::AerSource::discover()),
+            Box::new(super::mce::MceSource::discover()),
         ];
 
         // Collect parallel results — log and skip any that panicked

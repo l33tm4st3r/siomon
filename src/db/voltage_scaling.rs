@@ -36,19 +36,8 @@ impl VoltageChannel {
 /// if a matching board configuration is found, or `None` for unknown boards.
 pub fn lookup_nct6798(board_name: Option<&str>) -> Option<&'static [VoltageChannel; 18]> {
     let board = board_name?;
-    let lower = board.to_lowercase();
-
-    if lower.contains("wrx90e") {
-        Some(&ASUS_WRX90E_SAGE)
-    } else if lower.contains("crosshair") && lower.contains("x670") {
-        Some(&ASUS_CROSSHAIR_X670E)
-    } else if lower.contains("strix") && lower.contains("x670") {
-        Some(&ASUS_STRIX_X670E)
-    } else if lower.contains("tuf") && lower.contains("x670") {
-        Some(&ASUS_TUF_X670E)
-    } else {
-        None
-    }
+    let template = super::boards::lookup_board(board)?;
+    template.nct_voltage_scaling
 }
 
 /// Return the default (generic) NCT6798 voltage channel labels.
@@ -84,7 +73,7 @@ static DEFAULT_NCT6798: [VoltageChannel; 18] = [
 // ---------------------------------------------------------------------------
 // ASUS Pro WS WRX90E-SAGE SE (AMD TRX50 / WRX90 chipset, NCT6798D)
 // ---------------------------------------------------------------------------
-static ASUS_WRX90E_SAGE: [VoltageChannel; 18] = [
+pub static ASUS_WRX90E_SAGE: [VoltageChannel; 18] = [
     VoltageChannel::direct("Vcore"), // VIN0: CPU core voltage (~0.8-1.4V)
     VoltageChannel::new("+5V", 5.0), // VIN1: +5V rail through 4:1 divider
     VoltageChannel::direct("AVCC"),  // VIN2: +3.3V (internal 2:1, scale=1600)
@@ -106,58 +95,10 @@ static ASUS_WRX90E_SAGE: [VoltageChannel; 18] = [
 ];
 
 // ---------------------------------------------------------------------------
-// ASUS ROG CROSSHAIR X670E HERO (AMD AM5, NCT6798D)
+// Shared ASUS AM5 NCT6798D voltage scaling (Crosshair/Strix/TUF X670E)
 // Based on LibreHardwareMonitor Nct677X.cs patterns for ASUS AM5 boards
 // ---------------------------------------------------------------------------
-static ASUS_CROSSHAIR_X670E: [VoltageChannel; 18] = [
-    VoltageChannel::direct("Vcore"),     // VIN0
-    VoltageChannel::new("+5V", 5.0),     // VIN1
-    VoltageChannel::direct("AVCC"),      // VIN2
-    VoltageChannel::direct("+3.3V"),     // VIN3
-    VoltageChannel::new("+12V", 12.0),   // VIN4
-    VoltageChannel::direct("VIN5"),      // VIN5
-    VoltageChannel::direct("VIN6"),      // VIN6
-    VoltageChannel::direct("+3.3V AUX"), // VIN7
-    VoltageChannel::direct("Vbat"),      // VIN8
-    VoltageChannel::direct("VTT"),       // VIN9
-    VoltageChannel::direct("VIN10"),     // VIN10
-    VoltageChannel::direct("VIN11"),     // VIN11
-    VoltageChannel::direct("VIN12"),     // VIN12
-    VoltageChannel::direct("VIN13"),     // VIN13
-    VoltageChannel::direct("VIN14"),     // VIN14
-    VoltageChannel::direct("VIN15"),     // VIN15
-    VoltageChannel::direct("VIN16"),     // VIN16
-    VoltageChannel::direct("VIN17"),     // VIN17
-];
-
-// ---------------------------------------------------------------------------
-// ASUS ROG STRIX X670E-E GAMING WIFI (AMD AM5, NCT6798D)
-// ---------------------------------------------------------------------------
-static ASUS_STRIX_X670E: [VoltageChannel; 18] = [
-    VoltageChannel::direct("Vcore"),     // VIN0
-    VoltageChannel::new("+5V", 5.0),     // VIN1
-    VoltageChannel::direct("AVCC"),      // VIN2
-    VoltageChannel::direct("+3.3V"),     // VIN3
-    VoltageChannel::new("+12V", 12.0),   // VIN4
-    VoltageChannel::direct("VIN5"),      // VIN5
-    VoltageChannel::direct("VIN6"),      // VIN6
-    VoltageChannel::direct("+3.3V AUX"), // VIN7
-    VoltageChannel::direct("Vbat"),      // VIN8
-    VoltageChannel::direct("VTT"),       // VIN9
-    VoltageChannel::direct("VIN10"),     // VIN10
-    VoltageChannel::direct("VIN11"),     // VIN11
-    VoltageChannel::direct("VIN12"),     // VIN12
-    VoltageChannel::direct("VIN13"),     // VIN13
-    VoltageChannel::direct("VIN14"),     // VIN14
-    VoltageChannel::direct("VIN15"),     // VIN15
-    VoltageChannel::direct("VIN16"),     // VIN16
-    VoltageChannel::direct("VIN17"),     // VIN17
-];
-
-// ---------------------------------------------------------------------------
-// ASUS TUF GAMING X670E-PLUS (AMD AM5, NCT6798D)
-// ---------------------------------------------------------------------------
-static ASUS_TUF_X670E: [VoltageChannel; 18] = [
+pub static ASUS_AM5_NCT6798: [VoltageChannel; 18] = [
     VoltageChannel::direct("Vcore"),     // VIN0
     VoltageChannel::new("+5V", 5.0),     // VIN1
     VoltageChannel::direct("AVCC"),      // VIN2

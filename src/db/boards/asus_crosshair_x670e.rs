@@ -1,0 +1,15 @@
+use super::{BoardTemplate, ASUS_AM5_NCT6798_LABELS};
+use crate::db::voltage_scaling;
+
+pub static BOARD: BoardTemplate = BoardTemplate {
+    match_substrings: &["crosshair", "x670"],
+    exclude_substrings: &[],
+    match_any: &[],
+    description: "ASUS ROG CROSSHAIR X670E HERO (AMD AM5, NCT6798D)",
+
+    base_labels: Some(ASUS_AM5_NCT6798_LABELS),
+    sensor_labels: &[("hwmon/nct6798/fan2", "CPU OPT")],
+
+    nct_voltage_scaling: Some(&voltage_scaling::ASUS_AM5_NCT6798),
+    dimm_labels: &[],
+};

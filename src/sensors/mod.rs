@@ -1,12 +1,15 @@
+pub mod aer;
 pub mod alerts;
 pub mod cpu_freq;
 pub mod cpu_util;
 pub mod disk_activity;
+pub mod edac;
 pub mod gpu_sensors;
 pub mod hsmp;
 pub mod hwmon;
 pub mod i2c;
 pub mod ipmi;
+pub mod mce;
 pub mod network_stats;
 pub mod poller;
 pub mod rapl;
