@@ -24,4 +24,14 @@ pub struct PciDevice {
     pub numa_node: Option<i32>,
     pub pcie_link: Option<PcieLinkInfo>,
     pub enabled: bool,
+    /// AER (Advanced Error Reporting) error counters.
+    pub aer: Option<AerCounters>,
+}
+
+/// PCIe AER error counters from sysfs aer_dev_* files.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AerCounters {
+    pub correctable: u64,
+    pub nonfatal: u64,
+    pub fatal: u64,
 }

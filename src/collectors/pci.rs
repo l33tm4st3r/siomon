@@ -1,5 +1,5 @@
 use crate::model::gpu::PcieLinkInfo;
-use crate::model::pci::PciDevice;
+use crate::model::pci::{AerCounters, PciDevice};
 use crate::platform::sysfs;
 use pci_ids::FromId;
 use std::path::Path;
@@ -39,6 +39,7 @@ fn collect_device(path: &Path) -> Option<PciDevice> {
         .unwrap_or(true);
 
     let pcie_link = collect_pcie_link(path);
+    let aer = collect_aer(path);
 
     let (vendor_name, device_name) = resolve_pci_names(vendor_id, device_id);
     let (class_name, subclass_name) = resolve_class_names(class_code);
@@ -64,6 +65,7 @@ fn collect_device(path: &Path) -> Option<PciDevice> {
         numa_node,
         pcie_link,
         enabled,
+        aer,
     })
 }
 
@@ -104,6 +106,38 @@ fn collect_pcie_link(path: &Path) -> Option<PcieLinkInfo> {
         current_speed,
         max_speed,
     })
+}
+
+/// Read AER error totals from sysfs aer_dev_* files.
+///
+/// Each file contains lines like "TOTAL_ERR_COR 0". We extract the TOTAL_ line.
+/// Returns None if AER files don't exist (older kernels, non-PCIe devices).
+fn collect_aer(path: &Path) -> Option<AerCounters> {
+    let corr = parse_aer_total(&path.join("aer_dev_correctable"));
+    let nonfatal = parse_aer_total(&path.join("aer_dev_nonfatal"));
+    let fatal = parse_aer_total(&path.join("aer_dev_fatal"));
+
+    // Only return if at least one file was readable
+    if corr.is_none() && nonfatal.is_none() && fatal.is_none() {
+        return None;
+    }
+
+    Some(AerCounters {
+        correctable: corr.unwrap_or(0),
+        nonfatal: nonfatal.unwrap_or(0),
+        fatal: fatal.unwrap_or(0),
+    })
+}
+
+/// Parse the TOTAL_ line from an AER counter file.
+fn parse_aer_total(path: &Path) -> Option<u64> {
+    let content = std::fs::read_to_string(path).ok()?;
+    for line in content.lines() {
+        if line.starts_with("TOTAL_") {
+            return line.split_whitespace().last()?.parse().ok();
+        }
+    }
+    None
 }
 
 pub fn pcie_speed_to_gen(speed: &str) -> u8 {

@@ -489,8 +489,8 @@ pub fn print_section_pcie(info: &SystemInfo) {
         pcie_devices.len()
     );
     println!(
-        "  {:<14} {:<44} {:>5} {:>5} {:>5} {:>5}",
-        "Address", "Device", "CGen", "CWid", "MGen", "MWid"
+        "  {:<14} {:<40} {:>4} {:>4} {:>4} {:>4} {:>4} {:>6}",
+        "Address", "Device", "CGen", "CWid", "MGen", "MWid", "NUMA", "AER"
     );
     println!("  {}", "─".repeat(84));
 
@@ -501,8 +501,7 @@ pub fn print_section_pcie(info: &SystemInfo) {
             .as_deref()
             .or(dev.vendor_name.as_deref())
             .unwrap_or("Unknown");
-        // Truncate long names
-        let name_trunc: String = name.chars().take(42).collect();
+        let name_trunc: String = name.chars().take(38).collect();
 
         let cur_gen = link
             .current_gen
@@ -521,11 +520,29 @@ pub fn print_section_pcie(info: &SystemInfo) {
             .map(|w| format!("x{w}"))
             .unwrap_or_else(|| "-".into());
 
+        let numa = match dev.numa_node {
+            Some(n) if n >= 0 => format!("{n}"),
+            // -1 means firmware didn't set proximity; show 0 if single-node system
+            _ => "-".into(),
+        };
+
+        let aer = match &dev.aer {
+            Some(a) => {
+                let total = a.correctable + a.nonfatal + a.fatal;
+                if total == 0 {
+                    "ok".into()
+                } else {
+                    format!("{total}")
+                }
+            }
+            None => "-".into(),
+        };
+
         let driver = dev.driver.as_deref().unwrap_or("-");
 
         println!(
-            "  {:<14} {:<44} {:>5} {:>5} {:>5} {:>5}  ({})",
-            dev.address, name_trunc, cur_gen, cur_wid, max_gen, max_wid, driver
+            "  {:<14} {:<40} {:>4} {:>4} {:>4} {:>4} {:>4} {:>6}  ({})",
+            dev.address, name_trunc, cur_gen, cur_wid, max_gen, max_wid, numa, aer, driver
         );
     }
 }
