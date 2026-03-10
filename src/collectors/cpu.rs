@@ -3,8 +3,10 @@ use std::path::Path;
 
 use crate::db::cpu_codenames;
 use crate::error::Result;
+#[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+use crate::model::cpu::CacheLevel;
 use crate::model::cpu::{
-    CacheLevel, CpuCache, CpuFeatures, CpuInfo, CpuTopology, CpuVendor, CpuVulnerability, NumaNode,
+    CpuCache, CpuFeatures, CpuInfo, CpuTopology, CpuVendor, CpuVulnerability, NumaNode,
 };
 use crate::platform::{procfs, sysfs};
 

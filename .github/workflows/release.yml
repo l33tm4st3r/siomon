@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: write
-  pull-requests: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -63,26 +62,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Install git-cliff
-        uses: orhun/git-cliff-action@v4
-        with:
-          args: --version
-      - name: Generate changelog
-        id: changelog
-        uses: orhun/git-cliff-action@v4
-        with:
-          args: --latest --strip header
-        env:
-          OUTPUT: CHANGELOG.md
-          GITHUB_REPO: ${{ github.repository }}
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          body_path: CHANGELOG.md
+          generate_release_notes: true
           files: artifacts/**/*.tar.gz
-          generate_release_notes: false
