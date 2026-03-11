@@ -17,7 +17,7 @@ pub struct Cli {
     #[arg(short = 'f', long, value_enum, default_value_t = OutputFormat::Text, global = true)]
     pub format: OutputFormat,
 
-    /// Run in TUI (interactive) sensor monitor mode
+    /// Run in TUI (interactive) sensor monitor mode (press '/' to cross-filter)
     #[arg(short = 'm', long = "monitor", global = true)]
     pub tui: bool,
 
