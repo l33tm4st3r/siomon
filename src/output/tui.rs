@@ -745,7 +745,11 @@ fn ascii_contains_ignore_case(haystack: &str, needle_lc: &str) -> bool {
     for i in 0..=(hay.len() - needle.len()) {
         let mut j = 0;
         while j < needle.len() {
-            let h = if hay[i + j].is_ascii() { hay[i + j].to_ascii_lowercase() } else { hay[i + j] };
+            let h = if hay[i + j].is_ascii() {
+                hay[i + j].to_ascii_lowercase()
+            } else {
+                hay[i + j]
+            };
             if h != needle[j] {
                 break;
             }
@@ -807,7 +811,11 @@ fn build_rows(
         // When a filter is active, override collapse state so matching sensors
         // are always visible.
         let effective_collapsed = |key: &str| -> bool {
-            if !filter_lc.is_empty() { false } else { collapsed.contains(key) }
+            if !filter_lc.is_empty() {
+                false
+            } else {
+                collapsed.contains(key)
+            }
         };
 
         // Level 1: Source header
@@ -1075,19 +1083,13 @@ fn draw(
         frame.render_widget(table, chunks[1]);
 
         // Graph pane (if visible)
-        // chunk indices:
-        //   graph_visible + filter: [0]=header [1]=table [2]=graph [3]=filter [4]=status
-        //   graph_visible, no filter: [0]=header [1]=table [2]=graph [3]=status
-        //   no graph + filter: [0]=header [1]=table [2]=filter [3]=status
-        //   no graph, no filter: [0]=header [1]=table [2]=status
-        let (status_chunk, filter_chunk_opt) = if graph_visible && show_filter_bar {
-            (chunks[4], Some(chunks[3]))
-        } else if graph_visible {
-            (chunks[3], None)
-        } else if show_filter_bar {
-            (chunks[3], Some(chunks[2]))
+        // Note: the layout always includes a status bar as the last chunk.
+        // If a filter bar is active, it occupies the chunk immediately preceding it.
+        let last = chunks.len() - 1;
+        let (status_chunk, filter_chunk_opt) = if show_filter_bar && last > 0 {
+            (chunks[last], Some(chunks[last - 1]))
         } else {
-            (chunks[2], None)
+            (chunks[last], None)
         };
 
         if graph_visible {

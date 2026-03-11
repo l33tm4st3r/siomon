@@ -74,6 +74,22 @@ fn test_cli_monitor_mode() {
     assert_eq!(cli.interval, 2000);
 }
 
+#[test]
+fn test_cli_options_after_subcommand_works() {
+    // Regression test for Issue #2 / PR #3
+    use clap::{CommandFactory, FromArgMatches};
+    // Format after subcommand should work now that format is global
+    let matches = siomon::cli::Cli::command().get_matches_from(["sio", "sensors", "-f", "json"]);
+    let cli = siomon::cli::Cli::from_arg_matches(&matches).unwrap();
+    assert_eq!(cli.format, siomon::cli::OutputFormat::Json);
+    assert!(matches!(cli.command, Some(siomon::cli::Commands::Sensors)));
+
+    // Interval after subcommand
+    let matches = siomon::cli::Cli::command().get_matches_from(["sio", "cpu", "--interval", "500"]);
+    let cli = siomon::cli::Cli::from_arg_matches(&matches).unwrap();
+    assert_eq!(cli.interval, 500);
+}
+
 // ── Config parsing ──────────────────────────────────────────────────────
 
 #[test]
