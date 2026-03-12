@@ -96,7 +96,6 @@ pub enum ColorMode {
 impl Cli {
     /// Apply config file values for any CLI argument that wasn't explicitly set.
     pub fn apply_config(&mut self, config: &SiomonConfig, matches: &clap::ArgMatches) {
-
         if !self.is_explicitly_set("format", matches) {
             match config.general.format.as_str() {
                 "json" => self.format = OutputFormat::Json,
@@ -130,7 +129,10 @@ impl Cli {
     fn is_explicitly_set(&self, id: &str, matches: &clap::ArgMatches) -> bool {
         use clap::parser::ValueSource;
 
-        if matches.value_source(id).is_some_and(|s| s != ValueSource::DefaultValue) {
+        if matches
+            .value_source(id)
+            .is_some_and(|s| s != ValueSource::DefaultValue)
+        {
             return true;
         }
 

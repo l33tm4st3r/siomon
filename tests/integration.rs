@@ -106,7 +106,11 @@ fn test_cli_flag_precedence_with_subcommand() {
     };
 
     cli.apply_config(&config, &matches);
-    assert_eq!(cli.format, siomon::cli::OutputFormat::Json, "CLI flag -f json should take precedence");
+    assert_eq!(
+        cli.format,
+        siomon::cli::OutputFormat::Json,
+        "CLI flag -f json should take precedence"
+    );
 }
 
 #[test]
@@ -124,7 +128,11 @@ fn test_cli_no_flag_uses_config() {
     };
 
     cli.apply_config(&config, &matches);
-    assert_eq!(cli.format, siomon::cli::OutputFormat::Xml, "No flag should use config value");
+    assert_eq!(
+        cli.format,
+        siomon::cli::OutputFormat::Xml,
+        "No flag should use config value"
+    );
 }
 
 // ── Config parsing ──────────────────────────────────────────────────────
